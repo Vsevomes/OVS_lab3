@@ -1,33 +1,22 @@
-#ifndef PE_ACTIVATION_H
-#define PE_ACTIVATION_H
+#ifndef _PE_ACTIVATION_H_
+#define _PE_ACTIVATION_H_
 
-#include <systemc>
-#include <vector>
-#include "bus_if.h"
-#include "types.h"
-#include <cmath>
+#include "systemc.h"
 
-using namespace sc_core;
-
-// Processing Element для активации нейронов
-class PE_Activation : public sc_module {
-public:
-    // Порты
+SC_MODULE(pe_activation)
+{
     sc_in<bool> clk_i;
-    sc_in<bool> start_i;
-    sc_out<bool> done_o;
+    sc_inout<float> act_data_io;
+    sc_in<bool> act_start_i;
 
-    sc_port<bus_if> bus_port;       // доступ к общей памяти
+    size_t comm_time = 0;
 
-    SC_HAS_PROCESS(PE_Activation);
+    SC_HAS_PROCESS(pe_activation);
 
-    PE_Activation(sc_module_name name);
+    pe_activation(sc_module_name nm);
+    ~pe_activation() {};
 
-private:
-    std::vector<data_t> inputs;     // входные значения слоя
-    unsigned int num_inputs;         // количество входов для активации
-    void activation_fsm();           // основной процесс
-    data_t sigmoid(data_t x);        // сигмоидальная функция
+    void process();
 };
 
-#endif // PE_ACTIVATION_H
+#endif

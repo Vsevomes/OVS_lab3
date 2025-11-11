@@ -1,36 +1,49 @@
-#ifndef PE_MAC_H
-#define PE_MAC_H
+#ifndef _PE_MAC_H_
+#define _PE_MAC_H_
 
-#include <systemc>
-#include <vector>
-#include "bus_if.h"
-#include "types.h"
+#include "systemc.h"
+#include <queue>
 
-using namespace sc_core;
+SC_MODULE(pe_mac)
+{
+    sc_in<bool> clk_i;
+    sc_in<size_t> data_cnt_i;
+    sc_in<size_t> w_start_addr_i;
+    sc_in<size_t> v_start_addr_i;
+    sc_in<bool> load_i;
+    sc_out<bool> busy_o;
 
-// Processing Element (MAC)
-class PE_MAC : public sc_module {
-public:
-    // Порты
-    sc_in<bool> clk_i;              // такт
-    sc_in<bool> start_i;            // сигнал запуска
-    sc_out<bool> done_o;            // сигнал окончания вычислений
+    sc_out<size_t> addr_o;
+    sc_inout<float> data_io;
+    sc_out<bool> wr_o;
+    sc_out<bool> rd_o;
 
-    sc_port<bus_if> bus_port;       // доступ к общей памяти
+    sc_event process_event;
+    sc_event write_result_event;
 
-    // Параметры
-    unsigned int num_inputs;        // количество входов для MAC
+    std::queue<float> weight_queue;
+    std::queue<float> value_queue;
 
-    SC_HAS_PROCESS(PE_MAC);
+    size_t cycles;
+    size_t comm_time = 0;
 
-    PE_MAC(sc_module_name name, unsigned int inputs);
+    SC_HAS_PROCESS(pe_mac);
+    pe_mac();
+    pe_mac(sc_module_name nm);
+    ~pe_mac(){};
 
-    // Методы
-    void load_weights(const std::vector<data_t>& w); // загрузка весов в локальную память
+    void process();
+    void write_result();
+    void load_data();
 
 private:
-    std::vector<data_t> local_weights; // локальная память весов
-    void mac_fsm();                     // основной процесс вычислений
+    enum
+    {
+        LOAD_DATA = 0,
+        PROCESS = 1,
+        RESULT = 2,
+    } state;
+    float accumulator;
 };
 
-#endif // PE_MAC_H
+#endif

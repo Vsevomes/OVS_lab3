@@ -1,45 +1,49 @@
-#ifndef ACCELERATOR_H
-#define ACCELERATOR_H
+#ifndef _ACCELERATOR_H
+#define _ACCELERATOR_H
 
-#include <systemc>
-#include <vector>
-#include <memory>
-#include "types.h"
-#include "bus_if.h"
-#include "matrix_bus.h"
-#include "shared_memory.h"
+#include "pe_activation.h"
 #include "control_unit.h"
 #include "io_controller.h"
+#include "shared_memory.h"
 #include "pe_mac.h"
-#include "pe_activation.h"
+#include "config.h"
 
-using namespace sc_core;
-
-class Accelerator : public sc_module {
-public:
+SC_MODULE(accelerator)
+{
     sc_in<bool> clk_i;
 
-    unsigned int num_pe; // количество PE
+    pe_activation peAct;
+    control_unit controlUnit;
+    io_controller ioController;
+    shared_memory sharedMem;
+    sc_vector<pe_mac> macArray;
 
-    SC_HAS_PROCESS(Accelerator);
-    Accelerator(sc_module_name name, unsigned int pe_count = 4);
+    SC_HAS_PROCESS(accelerator);
 
-    // Подмодули
-    MatrixBus bus;
-    SharedMemory shared_mem;
-    ControlUnit ctrl;
-    IOController io_ctrl;
-    PE_Activation pe_act;
-    std::vector<PE_MAC*> pe_macs;
+    accelerator(sc_module_name nm);
+    ~accelerator(){};
+    void report_stats();
 
-    // Сигналы управления PE
-    std::vector<std::unique_ptr<sc_signal<bool>>> pe_start_signals;
-    std::vector<std::unique_ptr<sc_signal<bool>>> pe_done_signals;
-    sc_signal<bool> activation_start_sig;
-    sc_signal<bool> activation_done_sig;
+    void start();
 
-    void connect_modules();
-    void setup_pe_signals();
+    sc_signal<float> act_data;
+    sc_signal<bool> act_start;
+
+    sc_signal<bool> ioc_wr;
+    sc_signal<bool> ioc_rd;
+    sc_signal<size_t> ioc_res_addr;
+    sc_signal<bool> ioc_busy;
+
+    std::vector<sc_signal<size_t>> addr;
+    std::vector<sc_signal<float>> data;
+    std::vector<sc_signal<bool>> wr;
+    std::vector<sc_signal<bool>> rd;
+
+    std::vector<sc_signal<size_t>> data_cnt;
+    std::vector<sc_signal<size_t>> w_start_addr;
+    std::vector<sc_signal<size_t>> v_start_addr;
+    std::vector<sc_signal<bool>> load;
+    std::vector<sc_signal<bool>> busy;
 };
 
-#endif // ACCELERATOR_H
+#endif

@@ -1,73 +1,116 @@
 #include "accelerator.h"
-#include <sstream>
 
-using namespace sc_core;
-using namespace std;
-
-Accelerator::Accelerator(sc_module_name name, unsigned int pe_count)
-    : sc_module(name),
-      num_pe(pe_count),
-      bus("bus"),
-      shared_mem("shared_mem", 1024),
-      ctrl("control_unit", pe_count),
-      io_ctrl("io_controller"),
-      pe_act("activation_unit")
+accelerator::accelerator(sc_module_name nm)
+    : sc_module(nm),
+    clk_i("accelerator_clk"),
+    peAct("act"),
+    controlUnit("cu"),
+    ioController("ioc"),
+    sharedMem("lm"),
+    macArray("nc", pe_count),
+    addr(shared_mem_pe_count),
+    data(shared_mem_pe_count),
+    wr(shared_mem_pe_count),
+    rd(shared_mem_pe_count),
+    data_cnt(pe_count),
+    w_start_addr(pe_count),
+    v_start_addr(pe_count),
+    load(pe_count),
+    busy(pe_count)
 {
-    // Инициализация сигналов PE
-    pe_start_signals.reserve(num_pe);
-    pe_done_signals.reserve(num_pe);
-
-    for (unsigned int i = 0; i < num_pe; ++i) {
-        std::stringstream ss_start, ss_done;
-        ss_start << "pe_start_" << i;
-        ss_done << "pe_done_" << i;
-
-        pe_start_signals.push_back(std::make_unique<sc_signal<bool>>(ss_start.str().c_str()));
-        pe_done_signals.push_back(std::make_unique<sc_signal<bool>>(ss_done.str().c_str()));
+    // printf("accelerator constructor\n");
+    for (size_t i = 0; i < pe_count; ++i) {
+        macArray[i].clk_i(clk_i);
     }
 
-    setup_pe_signals();
-    connect_modules();
-}
+    peAct.clk_i(clk_i);
+    controlUnit.clk_i(clk_i);
+    ioController.clk_i(clk_i);
+    sharedMem.clk_i(clk_i);
 
-// Привязка сигналов PE к ControlUnit
-void Accelerator::setup_pe_signals() {
-    for (unsigned int i = 0; i < num_pe; ++i) {
-        ctrl.pe_start_signals[i](*pe_start_signals[i]);
-        ctrl.pe_done_signals[i](*pe_done_signals[i]);
+    ioController.addr_o(addr[0]);
+    controlUnit.addr_o(addr[0]);
+    sharedMem.addr_i(addr[0]);
+    ioController.data_io(data[0]);
+    controlUnit.data_io(data[0]);
+    sharedMem.data_io(data[0]);
+    ioController.wr_o(wr[0]);
+    controlUnit.wr_o(wr[0]);
+    sharedMem.wr_i(wr[0]);
+    ioController.rd_o(rd[0]);
+    controlUnit.rd_o(rd[0]);
+    sharedMem.rd_i(rd[0]);
+
+    controlUnit.ioc_res_addr_o(ioc_res_addr);
+    ioController.ioc_res_addr_i(ioc_res_addr);
+    controlUnit.ioc_busy_i(ioc_busy);
+    ioController.ioc_busy_o(ioc_busy);
+    controlUnit.ioc_wr_o(ioc_wr);
+    ioController.ioc_wr_i(ioc_wr);
+    controlUnit.ioc_rd_o(ioc_rd);
+    ioController.ioc_rd_i(ioc_rd);
+
+    peAct.act_data_io(act_data);
+    controlUnit.act_data_io(act_data);
+    peAct.act_start_i(act_start);
+    controlUnit.act_start_o(act_start);
+
+    for (size_t i = 0; i < pe_count; ++i) {
+        macArray[i].data_cnt_i(data_cnt[i]);
+        controlUnit.data_cnt_o(data_cnt[i]);
+        macArray[i].w_start_addr_i(w_start_addr[i]);
+        controlUnit.w_start_addr_o(w_start_addr[i]);
+        macArray[i].v_start_addr_i(v_start_addr[i]);
+        controlUnit.v_start_addr_o(v_start_addr[i]);
+        macArray[i].load_i(load[i]);
+        controlUnit.load_o(load[i]);
+        macArray[i].busy_o(busy[i]);
+        controlUnit.core_busy_i(busy[i]);
+        macArray[i].addr_o(addr[i + 1]);
+        sharedMem.addr_i(addr[i + 1]);
+        macArray[i].data_io(data[i + 1]);
+        sharedMem.data_io(data[i + 1]);
+        controlUnit.core_data_io(data[i + 1]);
+        macArray[i].wr_o(wr[i + 1]);
+        controlUnit.core_wr_i(wr[i + 1]);
+        macArray[i].rd_o(rd[i + 1]);
+        sharedMem.rd_i(rd[i + 1]);
     }
+    
+    SC_METHOD(start);
 }
 
-// Подключение модулей
-void Accelerator::connect_modules() {
-    ctrl.clk_i(clk_i);
-    io_ctrl.clk_i(clk_i);
-    shared_mem.clk_i(clk_i);
-    pe_act.clk_i(clk_i);
+void accelerator::start()
+{
+    // printf("Starting\n");
+    controlUnit.start();
+}
 
-    ctrl.bus_port(bus);
-    io_ctrl.bus_port(bus);
-    pe_act.bus_port(bus);
-    for (auto& pe : pe_macs)
-        pe->bus_port(bus);
+void accelerator::report_stats()
+{
+    size_t total_comm_time = 0;
+    size_t total_compute_time = 0;
 
-    // Связь шины с памятью
-    bus.set_read_cb(std::bind(&SharedMemory::read, &shared_mem, std::placeholders::_1));
-    bus.set_write_cb(std::bind(&SharedMemory::write, &shared_mem, std::placeholders::_1, std::placeholders::_2));
+    // Считаем PE
+    for (size_t i = 0; i < macArray.size(); ++i)
+    {
+        total_comm_time += macArray[i].comm_time;
+        total_compute_time += macArray[i].cycles;
 
-    // CU ↔ IOController
-    ctrl.done_o.write(io_ctrl.read_done_i);
-    ctrl.io_ready_i(io_ctrl.io_ready_o);
-
-    // CU ↔ PE Activation
-    ctrl.activation_start_o(activation_start_sig);
-    ctrl.activation_done_i(activation_done_sig);
-    pe_act.start_i(activation_start_sig);
-    pe_act.done_o(activation_done_sig);
-
-    // CU ↔ PE MAC
-    for (unsigned int i = 0; i < num_pe; ++i) {
-        ctrl.pe_start_signals[i](*pe_start_signals[i]);
-        ctrl.pe_done_signals[i](*pe_done_signals[i]);
+        std::cout << "[PE " << i << "] "
+                  << "Compute: " << macArray[i].cycles
+                  << ", Comm: " << macArray[i].comm_time << std::endl;
     }
+
+    total_comm_time += controlUnit.comm_time;
+    total_comm_time += ioController.comm_time;
+    total_comm_time += peAct.comm_time;
+
+    std::cout << "=== Accelerator Stats ===" << std::endl;
+    std::cout << "Communication cycles: " << total_comm_time << std::endl;
+    std::cout << "Computation cycles:   " << total_compute_time << std::endl;
+    std::cout << "Total simulated time:  " << sc_time_stamp() << std::endl;
+    std::cout << "Used memory: " << sharedMem.used_cells() * sizeof(float) << " bytes" << std::endl;
 }
+
+

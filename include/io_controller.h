@@ -1,48 +1,30 @@
-#ifndef IO_CONTROLLER_H
-#define IO_CONTROLLER_H
+#ifndef _IO_CONTROLLER_H_
+#define _IO_CONTROLLER_H_
 
-#include <systemc>
-#include "bus_if.h"
+#include "systemc.h"
 
-using namespace sc_core;
-using namespace sc_dt;
+SC_MODULE(io_controller)
+{
+  sc_in<bool> clk_i;
+  sc_out<size_t> addr_o;
+  sc_inout<float> data_io;
+  sc_out<bool> wr_o;
+  sc_out<bool> rd_o;
+  sc_in<bool> ioc_wr_i;
+  sc_in<bool> ioc_rd_i;
+  sc_in<size_t> ioc_res_addr_i;
+  sc_out<bool> ioc_busy_o;
 
-// IOController — модуль контроллера ввода/вывода
-class IOController : public sc_module {
-public:
-    // Порты интерфейса
-    sc_in<bool> clk_i;          // такт
-    sc_out<bool> io_ready_o;    // сигнал готовности данных
-    sc_in<bool> read_done_i;    // сигнал от управляющего блока, что данные считаны
+  size_t comm_time = 0;
 
-    // Интерфейс шины
-    sc_port<bus_if> bus_port;
+  SC_HAS_PROCESS(io_controller);
 
-    // Процессы
-    SC_HAS_PROCESS(IOController);
+  io_controller(sc_module_name nm);
+  ~io_controller() {};
 
-    IOController(sc_module_name name);
+  void mem_write();
+  void mem_read();
 
-private:
-    // Локальные буферы для конфигурации и данных
-    std::vector<uint32_t> config_data;
-    std::vector<uint32_t> image_data;
-
-    // Методы
-    void io_fsm();              // основная FSM
-    void read_from_bus();       // чтение конфигурации и входных данных
-    void send_result();         // передача результата обратно (пока заглушка)
-
-    // Состояния
-    enum State {
-        IDLE,
-        READ_CONFIG,
-        READ_INPUT,
-        WAIT_DONE,
-        SEND_RESULT
-    } state;
-
-    unsigned int addr_ptr;      // текущий адрес чтения
 };
 
-#endif // IO_CONTROLLER_H
+#endif

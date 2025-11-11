@@ -1,51 +1,55 @@
 #include "shared_memory.h"
-#include <sstream>
 
-using namespace sc_core;
-using namespace std;
-
-SharedMemory::SharedMemory(sc_module_name name, unsigned int size)
-    : sc_module(name),
-      clk_i("clk_i"),
-      mem_size(size)
+shared_memory::shared_memory(sc_module_name nm)
+    : sc_module(nm),
+      addr_i("lm_addr"),
+      data_io("lm_data"),
+      wr_i("lm_wr"),
+      rd_i("lm_rd")
 {
-    mem_array.resize(mem_size, 0);
+    // printf("shared_memory constructor\n");
+    SC_THREAD(bus_write);
+    sensitive << clk_i.pos();
+
+    SC_THREAD(bus_read);
+    sensitive << clk_i.pos();
 }
 
-// ----------------------------------------------------------
-// Запись в память
-// ----------------------------------------------------------
-void SharedMemory::write(addr_t addr, data_t data) {
-    if (addr >= mem_size) {
-        SC_REPORT_ERROR(this->name(), "Write out of memory bounds");
-        return;
+void shared_memory::bus_read()
+{
+    while (1)
+    {
+        // printf("shared_memory::bus_read\n");
+        for (size_t i = 0; i < 1; ++i)
+        {
+            if (wr_i[i]->read())
+            {
+                mem[addr_i[i]->read()] = data_io[i]->read();
+                used[addr_i[i]->read()] = true;
+            }
+        }
+        wait();
     }
-
-    mem_mutex.lock(); // моделируем эксклюзивный доступ
-    mem_array[addr] = data;
-    mem_mutex.unlock();
-
-    std::ostringstream msg;
-    msg << "WRITE: addr=" << addr << " data=" << data;
-    SC_REPORT_INFO(this->name(), msg.str().c_str());
 }
 
-// ----------------------------------------------------------
-// Чтение из памяти
-// ----------------------------------------------------------
-data_t SharedMemory::read(addr_t addr) {
-    if (addr >= mem_size) {
-        SC_REPORT_ERROR(this->name(), "Read out of memory bounds");
-        return 0;
+void shared_memory::bus_write()
+{
+    while (1)
+    {
+        // printf("shared_memory::bus_write\n");
+        for (size_t i = 0; i < shared_mem_pe_count; ++i)
+        {
+            if (prepared_write_queue[i].first) {
+                data_io[i]->write(prepared_write_queue[i].second);
+                prepared_write_queue[i] = {false, 0};
+            }
+            if (rd_i[i]->read())
+            {
+                //if (i == 0)
+                //printf("on addr %d value %f\n", addr_i[i]->read(), mem[addr_i[i]->read()]);
+                prepared_write_queue[i] = {true, mem[addr_i[i]->read()]};
+            }
+        }
+        wait();
     }
-
-    mem_mutex.lock();
-    data_t val = mem_array[addr];
-    mem_mutex.unlock();
-
-    std::ostringstream msg;
-    msg << "READ: addr=" << addr << " data=" << val;
-    SC_REPORT_INFO(this->name(), msg.str().c_str());
-
-    return val;
 }

@@ -1,55 +1,31 @@
-# -----------------------------------
-# Путь к SystemC
-# -----------------------------------
-SYSTEMC_HOME    = /usr/local/systemc-2.3.3
-TARGET_ARCH     = linux64
+INCLUDE_PATH=./include
+SOURCE_PATH=./src
+BUILD_PATH=./build
+TARGET=neuro_accelerator
 
-SYSTEMC_INC_DIR = $(SYSTEMC_HOME)/include
-SYSTEMC_LIB_DIR = $(SYSTEMC_HOME)/lib-$(TARGET_ARCH)
+SYSTEMC_INC_DIR  ?= $(SYSTEMC_HOME)/include
+SYSTEMC_LIB_DIR  ?= $(SYSTEMC_HOME)/lib-linux64
 
-# -----------------------------------
-# Флаги компиляции и линковки
-# -----------------------------------
-FLAGS           = -g -Wall -pedantic -Wno-long-long \
-                  -DSC_INCLUDE_DYNAMIC_PROCESSES -fpermissive \
-                  -I$(SYSTEMC_INC_DIR) -Iinclude
-LDFLAGS         = -L$(SYSTEMC_LIB_DIR) -lsystemc -lm
+CC=g++
+INCLUDE_FLAGS = -I$(INCLUDE_PATH) -I$(SYSTEMC_INC_DIR)
+LIB_FLAGS = -L$(SYSTEMC_LIB_DIR) -lsystemc -Wl,-rpath=$(SYSTEMC_LIB_DIR)
+CFLAGS = -O3 -std=c++17 -DSC_DEFAULT_WRITER_POLICY=SC_MANY_WRITERS
 
-# -----------------------------------
-# Файлы исходного кода
-# -----------------------------------
-SRCS = src/accelerator.cpp \
-       src/control_unit.cpp \
-       src/io_controller.cpp \
-	   src/matrix_bus.cpp \
-       src/pe_mac.cpp \
-       src/pe_activation.cpp \
-       src/shared_memory.cpp \
-       src/main.cpp
+SRCS:=$(shell find $(SOURCE_PATH) -name '*.cpp' -or -name '*.c' -or -name '*.s')
+OBJS := $(SRCS:%=$(BUILD_PATH)/%.o)
 
-OBJS = $(SRCS:.cpp=.o)
+.PHONY: clean all build
 
-# -----------------------------------
-# Цель по умолчанию
-# -----------------------------------
-all: accelerator_sim
+all: clean build
 
-# -----------------------------------
-# Компиляция исполняемого файла
-# -----------------------------------
-accelerator_sim: $(OBJS)
-	g++ -o $@ $(OBJS) $(LDFLAGS) $(FLAGS)
+build: $(TARGET) Makefile
 
-# -----------------------------------
-# Компиляция cpp -> o
-# -----------------------------------
-%.o: %.cpp
-	g++ -c $< -o $@ $(FLAGS)
+$(TARGET): $(OBJS)
+	$(CXX) $(CFLAGS) $(OBJS) $(LIB_FLAGS) -o $@
 
-# -----------------------------------
-# Очистка
-# -----------------------------------
+$(BUILD_PATH)/%.cpp.o: %.cpp
+	mkdir -p $(dir $@)
+	$(CXX) $(CFLAGS) $(INCLUDE_FLAGS) -c $< -o $@
+
 clean:
-	rm -f $(OBJS) accelerator_sim *.vcd
-
-.PHONY: all clean
+	rm -rf build/ $(TARGET)

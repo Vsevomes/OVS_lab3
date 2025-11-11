@@ -1,93 +1,86 @@
 #include "io_controller.h"
-#include <sstream>
 
-using namespace sc_core;
-using namespace std;
+#include <iostream>
+#include <fstream>
+#include <string>
 
-IOController::IOController(sc_module_name name)
-    : sc_module(name),
-      clk_i("clk_i"),
-      io_ready_o("io_ready_o"),
-      read_done_i("read_done_i"),
-      bus_port("bus_port"),
-      state(IDLE),
-      addr_ptr(0)
+io_controller::io_controller(sc_module_name nm)
+    : sc_module(nm)
 {
-    SC_THREAD(io_fsm);
+    SC_THREAD(mem_write);
     sensitive << clk_i.pos();
-    dont_initialize();
+
+    SC_THREAD(mem_read);
+    sensitive << clk_i.pos();
 }
 
-// ---------------------------------------------------------
-// Основной автомат состояний контроллера I/O
-// ---------------------------------------------------------
-void IOController::io_fsm() {
-    while (true) {
-        wait(); // ждём фронт такта
+void io_controller::mem_write()
+{
+    while (1)
+    {
+        while (!ioc_wr_i.read())
+            wait();
+            comm_time++;
 
-        switch (state) {
-        case IDLE:
-            SC_REPORT_INFO(this->name(), "State: IDLE");
-            addr_ptr = 0;
-            state = READ_CONFIG;
-            break;
+         std::cout << "[io_controller] Начало записи модели в память..." << std::endl;
 
-        case READ_CONFIG:
-            SC_REPORT_INFO(this->name(), "Reading configuration...");
-            read_from_bus();
-            state = READ_INPUT;
-            break;
+        ioc_busy_o->write(1);
 
-        case READ_INPUT:
-            SC_REPORT_INFO(this->name(), "Reading input data...");
-            read_from_bus();
-            io_ready_o.write(true);  // сигнал блоку управления, что данные готовы
-            state = WAIT_DONE;
-            break;
+        std::ifstream ifs;
+        ifs.open("input/model");
 
-        case WAIT_DONE:
-            if (read_done_i.read()) {
-                io_ready_o.write(false);
-                SC_REPORT_INFO(this->name(), "Computation done, sending result...");
-                state = SEND_RESULT;
-            }
-            break;
-
-        case SEND_RESULT:
-            send_result();
-            state = IDLE;
-            break;
+        size_t addr = 0;
+        while (ifs.is_open() && !ifs.eof())
+        {
+            float cell;
+            ifs >> cell;
+            addr_o->write(addr++);
+            data_io->write(cell);
+            wr_o->write(1);
+            wait();
+            comm_time++;
+            wr_o->write(0);
         }
+        wait();
+        ioc_busy_o->write(0);
+
+        std::cout << "[io_controller] Модель успешно загружена." << std::endl;
     }
 }
 
-// ---------------------------------------------------------
-// Имитация чтения конфигурации и данных из шины
-// ---------------------------------------------------------
-void IOController::read_from_bus() {
-    // Для примера считаем, что 8 слов конфигурации и 16 слов данных
-    unsigned int words = (state == READ_CONFIG) ? 8 : 16;
-
-    for (unsigned int i = 0; i < words; ++i) {
-        uint32_t data = bus_port->read(addr_ptr++);
-        if (state == READ_CONFIG)
-            config_data.push_back(data);
-        else
-            image_data.push_back(data);
-
-        std::ostringstream msg;
-        msg << "Read word[" << i << "] = " << data;
-        SC_REPORT_INFO(this->name(), msg.str().c_str());
-    }
-}
-
-// ---------------------------------------------------------
-// Заглушка для передачи результата обратно по шине
-// ---------------------------------------------------------
-void IOController::send_result() {
-    SC_REPORT_INFO(this->name(), "Sending results back via bus...");
-    // Для примера: просто записываем 4 результата
-    for (int i = 0; i < 4; ++i) {
-        bus_port->write(addr_ptr++, 100 + i); // фиктивные данные
+void io_controller::mem_read()
+{
+    while (1)
+    {
+        while (!ioc_rd_i.read())
+            wait();
+            comm_time++;
+        ioc_busy_o.write(1);
+        size_t addr = ioc_res_addr_i->read();
+        printf("====RESULT====\n");
+        addr_o->write(addr);
+        rd_o->write(1);
+        wait();
+        comm_time++;
+        rd_o->write(0);
+        wait();
+        wait(SC_ZERO_TIME);
+        printf("Class circle -> %f\n", data_io->read());
+        addr_o->write(addr + 1);
+        rd_o->write(1);
+        wait();
+        rd_o->write(0);
+        wait();
+        wait(SC_ZERO_TIME);
+        printf("Class square -> %f\n", data_io->read());
+        addr_o->write(addr + 2);
+        rd_o->write(1);
+        wait();
+        rd_o->write(0);
+        wait();
+        wait(SC_ZERO_TIME);
+        printf("Class triangle -> %f\n", data_io->read());
+        ioc_busy_o.write(0);
+        sc_stop();
     }
 }

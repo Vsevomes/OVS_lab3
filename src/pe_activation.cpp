@@ -1,58 +1,29 @@
 #include "pe_activation.h"
-#include <sstream>
 
-using namespace sc_core;
-using namespace std;
-
-PE_Activation::PE_Activation(sc_module_name name)
-    : sc_module(name),
-      clk_i("clk_i"),
-      start_i("start_i"),
-      done_o("done_o"),
-      num_inputs(0)
+pe_activation::pe_activation(sc_module_name nm)
+    : sc_module(nm),
+      clk_i("pe_activation_clk"),
+      act_data_io("pe_activation_data"),
+      act_start_i("pe_activation_start")
 {
-    SC_THREAD(activation_fsm);
+    SC_THREAD(process);
     sensitive << clk_i.pos();
-    dont_initialize();
 }
 
-// ----------------------------------------------------------
-// Сигмоидальная функция
-// ----------------------------------------------------------
-data_t PE_Activation::sigmoid(data_t x) {
-    return 1.0 / (1.0 + exp(-x));
-}
+void pe_activation::process()
+{
+    while (1)
+    {
+        if (act_start_i.read())
+        {
+            float value = act_data_io->read();
 
-// ----------------------------------------------------------
-// Основной FSM
-// ----------------------------------------------------------
-void PE_Activation::activation_fsm() {
-    while (true) {
-        wait(); // фронт такта
+            std::cout << "[pe_activation] Применение функции активации" << std::endl;
 
-        if (start_i.read()) {
-            SC_REPORT_INFO(this->name(), "Starting activation computation...");
-
-            // Для примера считаем, что входные данные лежат в адресах 0..num_inputs-1
-            data_t sum = 0.0f;
-            for (unsigned int i = 0; i < num_inputs; ++i) {
-                data_t val = bus_port->read(i);
-                sum += val;
-            }
-
-            // применяем сигмоид
-            data_t activated = sigmoid(sum);
-
-            std::ostringstream msg;
-            msg << "Activated result = " << activated;
-            SC_REPORT_INFO(this->name(), msg.str().c_str());
-
-            // записываем результат в память (например, адрес num_inputs)
-            bus_port->write(num_inputs, activated);
-
-            done_o.write(true);
-            wait(1, SC_NS);
-            done_o.write(false);
+            wait();
+            comm_time++;
+            act_data_io->write(1.0 / (exp(-value) + 1));
         }
+        wait();
     }
 }
